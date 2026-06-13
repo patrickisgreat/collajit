@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "collajit"
+version = "0.1.0"
+description = "Make digital art from hundreds-to-thousands of images: photo mosaics, generative layouts, and freeform collage."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Patrick Bennett" }]
+dependencies = [
+    "PySide6>=6.8",
+    "numpy>=1.26",
+    "Pillow>=10.0",
+    "scikit-learn>=1.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+collajit = "collajit.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

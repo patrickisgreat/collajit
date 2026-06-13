@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual env
+.venv/
+venv/
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# App cache / user data
+.collajit/
+
+# OS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+
+# Project outputs / sample assets (keep the repo light)
+out/
+*.collajit.json.bak
