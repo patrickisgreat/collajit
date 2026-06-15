@@ -8,6 +8,7 @@ import {
   type Library,
   type LibImage,
 } from "./api";
+import { physicalGrid } from "./helpers";
 
 const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -420,11 +421,12 @@ function MosaicTab(s: Shared) {
 
   // Physical mode: tile size is derived from tiles-across so the user sets the
   // tile count directly (the natural control), not the tile size.
-  const colsSafe = Math.max(1, cols);
-  const pTileIn = wIn / colsSafe;
-  const pRows = Math.max(1, Math.round((hIn / wIn) * colsSafe));
-  const pTilePx = Math.max(1, Math.round(pTileIn * dpi));
-  const tiles = sizing === "physical" ? colsSafe * pRows : colsSafe * colsSafe;
+  const grid = physicalGrid(wIn, hIn, cols, dpi);
+  const colsSafe = grid.cols;
+  const pRows = grid.rows;
+  const pTileIn = grid.tileIn;
+  const pTilePx = grid.tilePx;
+  const tiles = sizing === "physical" ? grid.tiles : colsSafe * colsSafe;
   const short = noRepeat ? Math.max(0, tiles - s.lib.count) : 0;
 
   const preset = () => {

@@ -171,6 +171,20 @@ def test_downloader_filters_dedupes_and_writes_manifest(tmp_path):
     assert (tmp_path / "manifest.jsonl").exists()
 
 
+def test_downloader_skips_already_downloaded_across_runs(tmp_path):
+    http = FakeHttp()
+    results = [
+        ImageResult(url="http://img/one.png", source="openverse"),
+        ImageResult(url="http://img/two.png", source="openverse"),
+    ]
+    first = download_results(results, tmp_path, max_count=10, min_width=400, min_height=400, http=http)
+    assert len(first) == 2
+    # Re-fetching the same images must add 0 (they're already on disk) — this is
+    # the fix for the "added N but library count didn't grow" inconsistency.
+    again = download_results(results, tmp_path, max_count=10, min_width=400, min_height=400, http=http)
+    assert again == []
+
+
 def test_downloader_drops_below_min_resolution(tmp_path):
     http = FakeHttp(image_size=200)  # every image is 200x200
     results = [ImageResult(url="http://img/x.png", source="openverse")]

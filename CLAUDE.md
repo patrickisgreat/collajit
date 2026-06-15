@@ -56,10 +56,21 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest
 # A single test
 .venv/bin/python -m pytest tests/test_generators.py::test_mosaic_size_and_color_match
 
+# Coverage (CI enforces a 75% floor)
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest --cov=collajit --cov-fail-under=75
+
 # Lint / autofix
 .venv/bin/ruff check src tests
 .venv/bin/ruff check --fix src tests
+
+# Frontend (React/Vite) — unit tests + type-check + build
+cd frontend && npm test && npm run build
 ```
+
+CI (`.github/workflows/ci.yml`) runs all of the above on every push to `main` and
+every PR: Python lint+test+coverage (ubuntu), frontend test+build (ubuntu), and a
+full Tauri `.app` build (macOS). `release.yml` builds + publishes the `.app` on a
+`v*` tag.
 
 ## Architecture
 
@@ -145,3 +156,170 @@ frontend/         Vite + React + TS UI (the real front end)
   friendly `RuntimeError` if it's missing, and the UI falls back to typed terms. It
   uses `claude-opus-4-8` with a JSON-schema output — see the `claude-api` skill
   before changing it.
+
+
+### Clean Code
+
+- **DRY**: Do not repeat yourself. Extract shared logic into reusable functions/modules. If you see duplication, refactor it.
+- **SRP (Single Responsibility Principle)**: Every function, module, and component should do one thing. If a function needs an "and" to describe it, split it.
+- **Small, modular functions**: Keep functions short and focused. Prefer many small composable functions over few large ones. Each should be independently understandable and testable.
+- **Never over-engineer**: Write the minimum code needed to solve the problem correctly. No speculative abstractions, premature generalization, or "just in case" code. Simple and clear beats clever.
+- **Naming**: Use descriptive, intention-revealing names. Code should read like prose — minimize the need for comments by making the code self-documenting.
+- **No dead code**: Remove unused imports, variables, functions, and commented-out code. Don't leave TODOs without action.
+
+## Testing
+
+No PR is mergeable without tests that cover the behavior introduced or changed in that PR.
+
+This is not negotiable. If the code is worth shipping, it is worth testing. If it is too hard to test, that is a signal the code needs to be restructured, not that the test can be skipped.
+
+---
+
+### The Testing Pyramid
+
+Follow the testing pyramid. Violations of the pyramid's proportions are a code smell.
+
+```
+        /\
+       /  \
+      / E2E\
+     /------\
+    /  Integ- \
+   / ration    \
+  /-------------\
+ /   Unit Tests  \
+/-----------------\
+```
+
+**Unit tests** form the base. They should be the majority of your test suite. Fast, isolated, no I/O, no network, no database. They test a single function or class in complete isolation. If your unit tests are slow, they are not unit tests.
+
+**Integration tests** sit in the middle. They test that components work correctly together — a service and its database, a handler and its dependencies, a module and the interface it consumes. You need fewer of these than unit tests, and they are allowed to be slower.
+
+**End-to-end tests** sit at the top. They are few, they are slow, and they test only the critical paths a real user would take through the system. You do not need an E2E test for every feature. You need one for every path that would be catastrophic to break silently.
+
+The pyramid gets inverted in a lot of codebases — a handful of unit tests and a mountain of E2E tests. This is a trap. E2E tests are brittle, slow, and expensive to maintain. They should be the last line of defense, not the first.
+
+---
+
+### Unit Tests
+
+- Every new function or method gets unit tests.
+- Test behavior, not implementation. If your test breaks when you rename an internal variable, it is testing the wrong thing.
+- Tests should be fast enough that running the full unit suite feels instant. If a test requires real I/O, it is an integration test — move it.
+- Use mocks and stubs at integration boundaries (network, filesystem, database, time). Do not mock your own code — if you find yourself mocking internal collaborators, the design needs work.
+- A test that cannot fail is not a test. After writing a test, verify it can fail by temporarily breaking the implementation.
+- Tests are documentation. A well-written test tells the reader what the system is supposed to do. Name tests accordingly: `it("returns an error when the user is not found")` not `it("works correctly")`.
+
+---
+
+### Integration Tests
+
+- New service boundaries, API endpoints, database interactions, and message queue consumers all need integration tests.
+- Integration tests should use real infrastructure where practical. Prefer a real test database over a mocked one. Docker Compose or your CI environment should provision dependencies.
+- Test the contract at the boundary, not the internals. An integration test for an API endpoint should test the request/response shape, status codes, and side effects — not the internal call graph.
+- Keep integration tests isolated from each other. Tests that depend on execution order or shared mutable state are land mines. Seed and tear down data per test or per suite.
+
+### Coverage
+
+- Coverage is a floor, not a goal. 100% coverage with meaningless tests is worthless. 80% coverage with tests that actually verify behavior is valuable.
+- Coverage reports are useful for finding untested paths, not for hitting a number. Use them that way.
+- New code should not lower coverage. CI should enforce this.
+
+---
+
+### What is not an acceptable excuse
+
+- **"It's just a small change."** Small changes break things. Small tests are also small.
+- **"It's hard to test."** Make it testable. Difficulty testing is almost always a design signal.
+- **"I'll add tests in a follow-up PR."** You won't. No one ever does. Tests go in the same PR or the PR does not merge.
+- **"The existing tests cover it."** Show that they do. Say so explicitly in the PR description. If they don't, add tests.
+- **"It's just a UI change, it doesn't need tests."** New UI gets Playwright tests. See above.
+
+### Security
+
+- **Security is a priority, not an afterthought.**
+- Never commit secrets, tokens, or credentials. Use `.env.local` and ensure `.gitignore` covers sensitive files.
+- Validate and sanitize all user input at system boundaries (file uploads, form data, URL params).
+- Use parameterized queries — never construct SQL strings manually.
+- Follow OWASP top 10 guidance: guard against XSS, injection, CSRF, and insecure deserialization.
+- Supabase RLS (Row Level Security) policies must be in place for all database tables.
+- Treat WASM input from JS as untrusted — validate array lengths, image dimensions, and parameter ranges in Rust before processing.
+- Review dependencies for known vulnerabilities (`pnpm audit`).
+
+### Git Workflow
+
+- **Always work from a feature branch.** Never commit directly to `main`. Create a descriptive branch name like `feat/improve-penalty-calc` or `fix/wasm-loader-fallback`.
+- **Commit often.** Make small, frequent commits that each represent a logical unit of work. Don't batch unrelated changes into one commit.
+- **Conventional commit messages.** Use prefixes:
+  - `feat:` — New feature or capability
+  - `fix:` — Bug fix
+  - `refactor:` — Code restructuring with no behavior change
+  - `test:` — Adding or updating tests
+  - `chore:` — Build, CI, dependency updates, tooling
+  - `docs:` — Documentation changes
+  - `perf:` — Performance improvements
+  - `style:` — Formatting, whitespace (no logic changes)
+- **Messages should be concise and meaningful.** Describe _what_ and _why_, not _how_. Example: `feat: add beam search lookahead to pin selection` not `update string_art.rs`.
+- **Submit PRs back to `main` using `gh pr create`.** PRs need clear titles using the same conventional prefixes. Include a summary of changes and a test plan in the PR body.
+- **The user will review all PRs before merge.** Do not merge PRs autonomously.
+- **NEVER add `Co-Authored-By` or "Generated with Claude Code" to commits or PRs.**
+
+### PR Description Template
+
+An empty PR description turns review into a game of telephone. Fill out the
+template below in every PR body (drop sections that genuinely don't apply, e.g.
+Renders on a pure-CI change). The goal: a reviewer should understand _what_
+changed and _why_ without having to ask. WHAT and WHY live in the prose; the
+_how_ lives in the diff.
+
+```markdown
+## Scope
+
+<!-- Brief description of WHAT you're doing and WHY. The big picture. -->
+
+closes #<issue>
+
+## Implementation
+
+<!-- HOW you achieved it. High-level program flow, any refactor, the tradeoffs
+you took, and anything you'd like reviewers to look at especially closely. -->
+
+## Renders / Screenshots
+
+<!-- This is a visual, WYSIWYG-to-the-physical-loom app — show, don't tell.
+For ANY change touching the algorithm, render params, or preprocessing, include
+the SAME source image rendered before and after at the SAME line count and
+settings. That side-by-side is the only reliable way to catch the exact tonal/
+quality regressions we keep fighting (see Product Invariants). For UI, show
+desktop + mobile. For pure backend/algorithm internals, a flow/diagram or the
+relevant numbers is a fine substitute. -->
+
+|         | before | after |
+| ------- | ------ | ----- |
+| desktop |        |       |
+| mobile  |        |       |
+
+## How to Test
+
+<!-- 1) The automated coverage: which unit/integration/e2e tests you added or
+updated for the behavior in this PR (no PR merges without them — see Testing).
+2) Manual repro: step-by-step to see the change in action, so a reviewer
+unfamiliar with this area can verify it. -->
+
+## Invariants & Risk
+
+<!-- Does this touch pin count, max line count, render params, the advisor's
+reach, or anything that changes what the on-screen render produces? Confirm the
+Product Invariants hold. Call out any settings/migration changes explicitly —
+they persist in Supabase and can silently change prod long after merge (a "dead"
+setting can come alive when later code wires it). -->
+
+## Emoji Guide
+
+**For reviewers: emojis call out blocking vs. non-blocking feedback.**
+
+| Type         | Emoji          | Meaning                                       |
+| ------------ | -------------- | --------------------------------------------- |
+| Blocking     | 🔴 ❌ 🚨       | Must be addressed before merge                |
+| Non-blocking | 🟡 💡 🤔 💭    | Minor suggestion, nit, or clarifying question |
+| Praise       | 🟢 💚 😍 👍 🙌 | Positive feedback — a crucial part of review  |
