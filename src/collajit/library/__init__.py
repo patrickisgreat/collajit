@@ -2,6 +2,6 @@
 feature vectors, plus the folder ingest that populates it."""
 
 from .catalog import Catalog, ImageRecord
-from .ingest import ingest, scan_folders
+from .ingest import ingest, ingest_file, scan_folders
 
-__all__ = ["Catalog", "ImageRecord", "ingest", "scan_folders"]
+__all__ = ["Catalog", "ImageRecord", "ingest", "ingest_file", "scan_folders"]

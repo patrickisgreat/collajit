@@ -31,6 +31,51 @@ class MosaicOptions:
     tint: float = 0.25  # 0 = untouched tiles, 1 = flat colour
     max_uses: int | None = 8  # cap how often any one source repeats (None = unlimited)
     sample_edge: int = 32  # working size used to feature each target cell
+    rows: int | None = None  # explicit row count; None = derive from target aspect
+
+
+@dataclass
+class PhysicalSpec:
+    """A print-size mosaic request expressed in inches.
+
+    e.g. a 7.5x7.5 in canvas with 0.25 in tiles at 300 DPI -> 30x30 = 900 tiles,
+    each 75px, output 2250x2250px.
+    """
+
+    canvas_w_in: float
+    canvas_h_in: float
+    tile_in: float
+    dpi: int = 300
+
+    @property
+    def cols(self) -> int:
+        return max(1, round(self.canvas_w_in / self.tile_in))
+
+    @property
+    def rows(self) -> int:
+        return max(1, round(self.canvas_h_in / self.tile_in))
+
+    @property
+    def tile_px(self) -> int:
+        return max(1, round(self.tile_in * self.dpi))
+
+    @property
+    def tile_count(self) -> int:
+        """Tiles needed — and, for a no-repeat mosaic, unique images required."""
+        return self.cols * self.rows
+
+    @property
+    def output_px(self) -> tuple[int, int]:
+        return (self.cols * self.tile_px, self.rows * self.tile_px)
+
+    def to_options(self, *, tint: float = 0.25, no_repeat: bool = True) -> MosaicOptions:
+        return MosaicOptions(
+            cols=self.cols,
+            rows=self.rows,
+            tile_px=self.tile_px,
+            tint=tint,
+            max_uses=1 if no_repeat else None,
+        )
 
 
 def _feature_weights() -> np.ndarray:
@@ -58,7 +103,7 @@ def build_mosaic(
 
     target = target.convert("RGB")
     aspect = target.width / target.height
-    rows = max(1, round(cols / aspect))
+    rows = opt.rows if opt.rows else max(1, round(cols / aspect))
 
     # Per-cell target features, computed from a downscaled copy of the target so
     # cropping each cell is cheap.

@@ -26,6 +26,7 @@ from ..library.catalog import Catalog
 class LibraryPanel(QWidget):
     ingestFolderRequested = Signal(str)
     imageActivated = Signal(str)  # source path
+    clearRequested = Signal()
 
     def __init__(self, catalog: Catalog, parent=None):
         super().__init__(parent)
@@ -33,10 +34,14 @@ class LibraryPanel(QWidget):
 
         self.add_btn = QPushButton("Add folder…")
         self.add_btn.clicked.connect(self._choose_folder)
+        self.clear_btn = QPushButton("Clear…")
+        self.clear_btn.setToolTip("Empty the library and start over")
+        self.clear_btn.clicked.connect(self.clearRequested.emit)
         self.count_label = QLabel("0 images")
 
         top = QHBoxLayout()
         top.addWidget(self.add_btn)
+        top.addWidget(self.clear_btn)
         top.addStretch(1)
         top.addWidget(self.count_label)
 

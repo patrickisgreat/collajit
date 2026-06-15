@@ -61,16 +61,21 @@ class Project:
     def render_pil(self) -> Image.Image:
         return image_ops.to_pil(self.render())
 
-    def export(self, path: str | Path, *, quality: int = 95) -> None:
-        """Render and save to ``path``. JPEG gets a white matte (no alpha)."""
+    def export(self, path: str | Path, *, quality: int = 95, dpi: int | None = None) -> None:
+        """Render and save to ``path``. JPEG gets a white matte (no alpha).
+
+        ``dpi`` embeds print resolution so the file opens at its physical size
+        (e.g. a 2250px image at 300 dpi prints at 7.5 inches).
+        """
         path = Path(path)
         img = self.render_pil()
+        save_kwargs = {"dpi": (dpi, dpi)} if dpi else {}
         if path.suffix.lower() in {".jpg", ".jpeg"}:
             matte = Image.new("RGB", img.size, (255, 255, 255))
             matte.paste(img, mask=img.split()[3])
-            matte.save(path, quality=quality)
+            matte.save(path, quality=quality, **save_kwargs)
         else:
-            img.save(path)
+            img.save(path, **save_kwargs)
 
     # -- persistence --------------------------------------------------------
 

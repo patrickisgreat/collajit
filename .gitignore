@@ -18,6 +18,19 @@ venv/
 # App cache / user data
 .collajit/
 
+# Secrets — keep real keys out of git (.env.example is the committed template)
+.env
+.env.local
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/node_modules/
+
+# Tauri / Rust build artifacts
+frontend/src-tauri/target/
+frontend/src-tauri/gen/
+
 # OS
 .DS_Store
 

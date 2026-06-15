@@ -18,7 +18,8 @@ from ..engine import image_ops
 from ..engine.features import extract_features
 from .catalog import Catalog, ImageRecord
 
-ProgressCb = Callable[[int, int, str], None]
+# (done, total) — same shape as the generator/fetch progress callbacks.
+ProgressCb = Callable[[int, int], None]
 
 
 def scan_folders(folders: Iterable[str | Path], *, recursive: bool = True) -> list[Path]:
@@ -61,6 +62,22 @@ def _process_one(src: Path) -> ImageRecord:
     )
 
 
+def ingest_file(path: str | Path, catalog: Catalog) -> bool:
+    """Ingest a single image into the catalog. Returns True if (re)processed.
+
+    Used by the fetcher to add images one-by-one as they download, so the library
+    grid fills live instead of all at once at the end.
+    """
+    src = Path(path)
+    try:
+        if not catalog.needs_update(str(src), src.stat().st_mtime):
+            return False
+        catalog.upsert(_process_one(src))
+        return True
+    except (OSError, Image.DecompressionBombError, ValueError):
+        return False
+
+
 def ingest(
     folders: Iterable[str | Path],
     catalog: Catalog,
@@ -70,8 +87,8 @@ def ingest(
 ) -> int:
     """Ingest images from ``folders`` into ``catalog``. Returns count processed.
 
-    ``progress(done, total, path)`` is called per file (including skips) so a UI
-    can show a determinate progress bar.
+    ``progress(done, total)`` is called per file (including skips) so a UI can show
+    a determinate progress bar.
     """
     files = scan_folders(folders, recursive=recursive)
     total = len(files)
@@ -86,5 +103,5 @@ def ingest(
             # Unreadable / corrupt / absurdly large image — skip, keep going.
             pass
         if progress is not None:
-            progress(i, total, str(src))
+            progress(i, total)
     return processed

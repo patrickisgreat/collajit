@@ -7,6 +7,7 @@ into model mutations, then refreshes the canvas and layer list. Heavy work
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from PIL import Image
@@ -21,13 +22,16 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
+from .. import config
 from ..engine import image_ops
+from ..fetch import FetchRequest, run_fetch, tagger
 from ..generators import freeform, generative, mosaic
 from ..library import ingest as ingest_images
 from ..library.catalog import Catalog
 from ..model.layer import Layer, Transform
 from ..model.project import Project
 from .canvas import CanvasView
+from .fetch_panel import FetchPanel
 from .layers_panel import LayersPanel
 from .library_panel import LibraryPanel
 from .panels import FreeformPanel, GenerativePanel, MosaicPanel
@@ -62,6 +66,13 @@ class MainWindow(QMainWindow):
         lib_dock.setWidget(self.library)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, lib_dock)
 
+        self.fetch = FetchPanel()
+        fetch_dock = QDockWidget("Fetch images", self)
+        fetch_dock.setWidget(self.fetch)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, fetch_dock)
+        self.tabifyDockWidget(lib_dock, fetch_dock)
+        lib_dock.raise_()
+
         self.mosaic_panel = MosaicPanel()
         self.generative_panel = GenerativePanel()
         self.freeform_panel = FreeformPanel()
@@ -93,6 +104,7 @@ class MainWindow(QMainWindow):
 
         lib_menu = bar.addMenu("&Library")
         self._add_action(lib_menu, "Add folder…", self.library._choose_folder)
+        self._add_action(lib_menu, "Clear library…", self.clear_library)
 
         view_menu = bar.addMenu("&View")
         self._add_action(view_menu, "Fit canvas", self.canvas.fit_page, QKeySequence("Ctrl+0"))
@@ -114,6 +126,10 @@ class MainWindow(QMainWindow):
     def _wire(self) -> None:
         self.library.ingestFolderRequested.connect(self.ingest_folder)
         self.library.imageActivated.connect(self.add_image_layer)
+        self.library.clearRequested.connect(self.clear_library)
+
+        self.fetch.suggestRequested.connect(self.suggest_terms)
+        self.fetch.fetchRequested.connect(self.fetch_images)
 
         self.mosaic_panel.generateRequested.connect(self.run_generator)
         self.generative_panel.generateRequested.connect(self.run_generator)
@@ -164,6 +180,72 @@ class MainWindow(QMainWindow):
     def _ingest_done(self, processed: int) -> None:
         self.library.reload()
         self._end_task(f"Indexed {processed} new image(s); {self.catalog.count()} total.")
+
+    # -- web fetch ----------------------------------------------------------
+
+    def suggest_terms(self, target_path: str) -> None:
+        self._begin_task("Asking Claude for search terms …")
+        run_async(
+            tagger.suggest_terms,
+            target_path,
+            on_done=self._suggest_done,
+            on_error=self._on_error,
+        )
+
+    def _suggest_done(self, terms: list[str]) -> None:
+        self.fetch.set_terms(terms)
+        self._end_task(f"Suggested: {', '.join(terms)}")
+
+    def fetch_images(self, params: dict) -> None:
+        if not params.get("terms"):
+            QMessageBox.information(
+                self,
+                "No search terms",
+                "Type what to fetch (e.g. 'eyes, iris macro'), or choose a target "
+                "and click 'Suggest from image'.",
+            )
+            return
+        request = FetchRequest(
+            terms=params["terms"],
+            target_path=params.get("target_path"),
+            count=params["count"],
+            min_width=params["min_width"],
+            min_height=params["min_height"],
+            sources=params["sources"],
+        )
+        self._begin_task(f"Fetching images for {', '.join(request.terms)} …")
+        run_async(
+            run_fetch,
+            request,
+            self.catalog,
+            with_progress=True,
+            on_progress=self._on_progress,
+            on_done=self._fetch_done,
+            on_error=self._on_error,
+        )
+
+    def _fetch_done(self, result) -> None:
+        self.library.reload()
+        self._end_task(
+            f"Fetched {result.downloaded} image(s); {result.catalog_total} in library."
+        )
+
+    def clear_library(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Clear library?",
+            "Empty the library and start over?\n\nThis clears the catalog and the "
+            "cached thumbnails. Your own image folders are NOT deleted (re-add them "
+            "any time). Web-fetched originals stay on disk under ~/.collajit/fetched.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.catalog.clear()
+        shutil.rmtree(config.thumbnails_dir(), ignore_errors=True)
+        self.library.reload()
+        self._end_task("Library cleared.")
 
     # -- adding layers ------------------------------------------------------
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from collajit.engine.features import FEATURE_DIM
 from collajit.library import ingest, scan_folders
 
@@ -32,3 +34,21 @@ def test_records_carry_thumbnails_and_dims(library):
     rec = records[0]
     assert rec.width == 64 and rec.height == 64
     assert rec.thumb_path.endswith(".png")
+
+
+def test_clear_empties_catalog(library):
+    catalog, _records, _features = library
+    assert catalog.count() == 26
+    catalog.clear()
+    assert catalog.count() == 0
+    assert catalog.all_records() == []
+
+
+def test_catalog_usable_across_threads(image_dir, catalog):
+    """Catalog is created on one thread but ingest runs on a worker thread (as in
+    the UI). Regression for 'SQLite objects created in a thread...'."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        processed = pool.submit(ingest, [image_dir], catalog).result()
+    assert processed == 26
+    # Read back from the main thread — would raise without check_same_thread/lock.
+    assert catalog.count() == 26

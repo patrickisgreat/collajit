@@ -4,10 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`collajit` is a local desktop app (PySide6/Qt6) for making digital art from large
-image collections — hundreds to thousands of images. Three art modes: **photo
-mosaic**, **generative/algorithmic layouts**, and **freeform layered collage**,
-all editable on one interactive canvas.
+`collajit` makes digital art from large image collections — hundreds to thousands
+of images. Three art modes: **photo mosaic**, **generative/algorithmic layouts**,
+and **freeform layered collage**.
+
+**The UI is a Tauri desktop app** (Rust shell → React/Vite frontend → local FastAPI
+backend that wraps the Python core). The Python compute core is UI-agnostic and is
+the source of truth; the Qt/PySide6 app (`collajit.ui`, `python -m collajit`) is the
+**legacy** first UI, kept working but superseded by the web/Tauri UI.
+
+### Run
+
+```bash
+# Desktop app (built .app):
+open frontend/src-tauri/target/release/bundle/macos/collajit.app
+# Desktop app, dev (hot reload; spawns backend via .venv):
+cd frontend && npm run tauri dev
+# Build the .app:
+cd frontend && npm run tauri build
+# Web app only (one process serves API + built UI): open http://127.0.0.1:8756
+.venv/bin/collajit-server
+# Legacy Qt UI:
+.venv/bin/python -m collajit
+```
+
+The Tauri shell (`frontend/src-tauri/src/lib.rs`) spawns `.venv/bin/collajit-server`
+on launch (found by walking up from the executable to the repo root, so `.env`
+loads) and kills it on exit. Distribution to machines without the `.venv` needs a
+PyInstaller sidecar (not yet built — `spawn_backend()` already prefers a `collajit-server`
+binary next to the executable if present).
 
 ## Environment
 
@@ -64,11 +89,33 @@ generators/ ── the three art modes (consume the library, emit composition ou
   generative  colour-sort grid OR PCA/t-SNE embedding snapped to a grid; one composite image
   freeform    scatter library images as MANY editable Layers (kept high-res & movable)
 
-ui/      ── PySide6 editor (the only Qt code)
+fetch/   ── pull source images from the web into the library (all keyless/CC sources)
+  sources/    Openverse / Wikimedia / Met adapters behind one ImageSource interface;
+              they take an injectable HttpClient (RequestsHttp default) so tests run offline
+  planner     derive palette-spanning queries from the target's colours, budget count across them
+  downloader  concurrent download, decode-verify + min-resolution filter, hash-dedupe, manifest.jsonl
+  tagger      OPTIONAL Claude-vision term suggestion (anthropic SDK, claude-opus-4-8); only fills
+              the terms box — typed terms always work and take precedence
+  service     run_fetch(): plan → search all sources → download → ingest into the catalog
+
+server/  ── FastAPI backend (the API the web/Tauri UI calls; reuses the core)
+  app         create_app(): REST + SSE over library/fetch/generators/project; serves
+              frontend/dist at / when built; physical-sizing + no-repeat live here
+  jobs        in-process JobManager: long ops run on threads, progress streamed via SSE
+
+ui/      ── PySide6 editor (LEGACY Qt UI; superseded by the Tauri app)
   main_window owns the Catalog + active Project; turns panel signals into model edits
   canvas      QGraphicsView; each Layer is a movable LayerItem, edits write back to the model
-  library_panel / layers_panel / panels/*  docked controls
-  worker      run_async(): heavy work (ingest, mosaic, generative) on QThreadPool, off the UI thread
+  worker      run_async(): heavy work on QThreadPool, off the UI thread
+```
+
+Outside the Python package:
+
+```
+frontend/         Vite + React + TS UI (the real front end)
+  src/api.ts      thin client: REST helpers + runJob() SSE subscriber; API_BASE = :8756
+  src/App.tsx     layout + Library / Fetch / Mosaic / Generative tabs + Preview
+  src-tauri/      Tauri 2 (Rust) desktop shell; lib.rs spawns/kills the backend
 ```
 
 ### Things worth knowing before you change code
@@ -86,4 +133,15 @@ ui/      ── PySide6 editor (the only Qt code)
   the canvas sets the item's transform origin to its centre so scale/rotation pivot
   there. Keep `canvas` and `compositor.rasterize` consistent if you touch this.
 - The catalog/thumbnails persist under `~/.collajit`. Tests isolate it via the
-  `COLLAJIT_HOME` env var (see `tests/conftest.py`).
+  `COLLAJIT_HOME` env var (see `tests/conftest.py`). Fetched images land in
+  `~/.collajit/fetched/<slug>/` and are auto-ingested.
+- **Fetch is Qt-free and network-isolated for tests.** Sources never import
+  `requests` directly — they take an `HttpClient`; `tests/test_fetch.py` injects a
+  `FakeHttp`. Don't add real network calls to the test suite.
+- **Claude vision tagging** needs `ANTHROPIC_API_KEY` (or `ANTHROPIC_AUTH_TOKEN`).
+  `app.main()` calls `config.load_env()` first, which loads a project-root `.env`
+  (via python-dotenv, real env vars win) — so the key lives in `.env` (gitignored;
+  `.env.example` is the template), not the shell. `tagger.suggest_terms` raises a
+  friendly `RuntimeError` if it's missing, and the UI falls back to typed terms. It
+  uses `claude-opus-4-8` with a JSON-schema output — see the `claude-api` skill
+  before changing it.

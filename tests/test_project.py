@@ -66,6 +66,17 @@ def test_export_png_and_jpeg(tmp_path):
     assert Image.open(jpg).mode == "RGB"
 
 
+def test_export_embeds_dpi(tmp_path):
+    proj = Project(width=30, height=30, background=(1, 1, 1, 1))
+    proj.add_layer(
+        Layer(path=_red_tile_path(tmp_path), transform=Transform(cx=15, cy=15))
+    )
+    png = tmp_path / "dpi.png"
+    proj.export(png, dpi=300)
+    info = Image.open(png).info
+    assert round(info["dpi"][0]) == 300
+
+
 def test_layer_reorder():
     proj = Project()
     a = proj.add_layer(Layer(name="a"))

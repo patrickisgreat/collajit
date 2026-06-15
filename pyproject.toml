@@ -14,6 +14,12 @@ dependencies = [
     "numpy>=1.26",
     "Pillow>=10.0",
     "scikit-learn>=1.4",
+    "requests>=2.31",
+    "anthropic>=0.40",
+    "python-dotenv>=1.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +30,7 @@ dev = [
 
 [project.scripts]
 collajit = "collajit.app:main"
+collajit-server = "collajit.server.app:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

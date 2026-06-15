@@ -16,6 +16,25 @@ IMAGE_EXTENSIONS = frozenset(
 THUMBNAIL_SIZE = 128
 
 
+def load_env() -> str | None:
+    """Load a local ``.env`` into the process environment, if one exists.
+
+    Looks upward from the current working directory (so running the app from the
+    project root picks up ``./.env``). Existing environment variables win over
+    ``.env`` values. Returns the loaded path, or ``None`` if nothing was found or
+    python-dotenv isn't installed. Safe to call more than once.
+    """
+    try:
+        from dotenv import find_dotenv, load_dotenv
+    except ImportError:
+        return None
+    path = find_dotenv(usecwd=True)
+    if path:
+        load_dotenv(path, override=False)
+        return path
+    return None
+
+
 def cache_root() -> Path:
     """Root directory for catalogs, thumbnails and other derived data.
 
@@ -29,5 +48,26 @@ def cache_root() -> Path:
 
 def thumbnails_dir() -> Path:
     d = cache_root() / "thumbnails"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def fetched_dir() -> Path:
+    """Where web-fetched images are downloaded before ingest."""
+    d = cache_root() / "fetched"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def outputs_dir() -> Path:
+    """Where the server writes generated composites for the UI to fetch."""
+    d = cache_root() / "outputs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def uploads_dir() -> Path:
+    """Where the server stores uploaded target images."""
+    d = cache_root() / "uploads"
     d.mkdir(parents=True, exist_ok=True)
     return d

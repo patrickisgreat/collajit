@@ -38,6 +38,26 @@ def test_mosaic_respects_max_uses_roughly(library):
     assert out.size[0] == 8 * 8
 
 
+def test_physical_spec_eyeball_of_fish():
+    spec = mosaic.PhysicalSpec(canvas_w_in=7.5, canvas_h_in=7.5, tile_in=0.25, dpi=300)
+    assert (spec.cols, spec.rows) == (30, 30)
+    assert spec.tile_px == 75
+    assert spec.tile_count == 900  # unique fish needed for no-repeat
+    assert spec.output_px == (2250, 2250)  # 7.5in at 300dpi
+    opt = spec.to_options(no_repeat=True)
+    assert opt.max_uses == 1 and (opt.cols, opt.rows, opt.tile_px) == (30, 30, 75)
+
+
+def test_mosaic_honors_explicit_rows(library):
+    _catalog, records, features = library
+    target = Image.new("RGB", (200, 100))  # 2:1 aspect
+    out = mosaic.build_mosaic(
+        target, records, features,
+        mosaic.MosaicOptions(cols=4, rows=6, tile_px=8, max_uses=None, tint=0.0),
+    )
+    assert out.size == (4 * 8, 6 * 8)  # rows honoured, not derived from aspect
+
+
 def test_color_sort_layout_grid_size(library):
     _catalog, records, _features = library
     out = generative.color_sort_layout(records, cols=6, tile_px=16, key="hue")
