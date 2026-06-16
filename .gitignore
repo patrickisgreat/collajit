@@ -15,6 +15,12 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
+# Coverage / build artifacts
+.coverage
+coverage.xml
+htmlcov/
+*.tsbuildinfo
+
 # App cache / user data
 .collajit/
 

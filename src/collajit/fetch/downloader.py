@@ -68,6 +68,14 @@ def download_results(
     done = 0
     total = min(len(candidates), max_count) or 1
 
+    # Files already on disk from a previous run (by "<source>_<hash>" stem), so a
+    # re-fetch of the same term skips images we already have instead of
+    # re-downloading + re-ingesting them (which only updated rows and inflated the
+    # "added" count without growing the library).
+    existing_stems: set[str] = set()
+    if dest.exists():
+        existing_stems = {p.stem for p in dest.iterdir() if p.is_file()}
+
     def fetch(result: ImageResult) -> tuple[ImageResult, bytes] | None:
         try:
             return result, http.get_bytes(result.url)
@@ -84,10 +92,14 @@ def download_results(
             digest = hashlib.sha1(data).hexdigest()
             if digest in seen_hashes:
                 continue
+            seen_hashes.add(digest)
+            stem = f"{result.source}_{digest[:16]}"
+            if stem in existing_stems:
+                continue  # already have this exact image from a prior fetch
             path = _validate_and_save(data, digest, result, dest, min_width, min_height)
             if path is None:
                 continue
-            seen_hashes.add(digest)
+            existing_stems.add(stem)
             saved.append(path)
             manifest.append({"file": path.name, **asdict(result)})
             done += 1
